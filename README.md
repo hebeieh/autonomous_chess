@@ -123,18 +123,32 @@ $$\Delta B = \Delta X - \Delta Y$$
 
 Скрипты управления используют демон `pigpio`, обеспечивающий аппаратную точность импульсов без задержек операционной системы Linux.
 
-### 1. Настройка Raspberry Pi OS
-Подключитесь к Raspberry Pi Zero 2W по SSH и установите необходимые пакеты:
+### 1. Установка pigpio на Raspberry Pi OS
+
+**Вариант А (из репозитория apt):**
 ```bash
 sudo apt update
 sudo apt install -y python3 python3-pip pigpio python3-pigpio git
 ```
 
-### 2. Запуск и автозагрузка демона pigpiod
+**Вариант Б (сборка из исходников, например для Debian Trixie / Bookworm):**
 ```bash
+sudo apt update
+sudo apt install -y git build-essential python3-setuptools
+git clone https://github.com/joan2937/pigpio.git
+cd pigpio
+make
+sudo make install
+sudo ldconfig
+```
+
+### 2. Запуск демона pigpiod
+```bash
+# Запуск демона вручную:
+sudo pigpiod
+
+# Или через systemd (если доступен сервис):
 sudo systemctl enable --now pigpiod
-# Проверить статус демона:
-sudo systemctl status pigpiod
 ```
 
 ### 3. Клонирование репозитория

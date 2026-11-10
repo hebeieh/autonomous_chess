@@ -11,6 +11,15 @@ import argparse
 import sys
 import time
 
+try:
+    import pigpio
+    PI_OUTPUT = pigpio.OUTPUT
+    PI_INPUT = pigpio.INPUT
+except ImportError:
+    pigpio = None
+    PI_OUTPUT = 1
+    PI_INPUT = 0
+
 import config
 
 
@@ -49,16 +58,15 @@ class CoreXYController:
 
     def _init_gpio(self):
         if not self.dry_run:
-            try:
-                import pigpio
+            if pigpio is not None:
                 self.pi = pigpio.pi()
                 if not self.pi.connected:
                     print("ВНИМАНИЕ: Не удалось подключиться к pigpiod (демон не запущен).")
                     print("Автоматическое переключение в режим эмуляции (--dry-run).")
-                    print("Для работы на RPi выполните: sudo systemctl start pigpiod\n")
+                    print("Для работы на RPi выполните: sudo pigpiod\n")
                     self.dry_run = True
                     self.pi = MockPigpio()
-            except ImportError:
+            else:
                 print("ВНИМАНИЕ: Модуль 'pigpio' не установлен в системе.")
                 print("Автоматическое переключение в режим эмуляции (--dry-run).\n")
                 self.dry_run = True
@@ -69,16 +77,16 @@ class CoreXYController:
     def _setup_pins(self):
         # Настройка пинов левого мотора
         for pin in [config.MOTOR_LEFT.step_pin, config.MOTOR_LEFT.dir_pin, config.MOTOR_LEFT.enable_pin]:
-            self.pi.set_mode(pin, self.pi.OUTPUT)
+            self.pi.set_mode(pin, PI_OUTPUT)
             self.pi.write(pin, 0)
 
         # Настройка пинов правого мотора
         for pin in [config.MOTOR_RIGHT.step_pin, config.MOTOR_RIGHT.dir_pin, config.MOTOR_RIGHT.enable_pin]:
-            self.pi.set_mode(pin, self.pi.OUTPUT)
+            self.pi.set_mode(pin, PI_OUTPUT)
             self.pi.write(pin, 0)
 
         # Настройка пина электромагнита
-        self.pi.set_mode(config.ELECTROMAGNET_PIN, self.pi.OUTPUT)
+        self.pi.set_mode(config.ELECTROMAGNET_PIN, PI_OUTPUT)
         self.pi.write(config.ELECTROMAGNET_PIN, 0)
 
         # По умолчанию отключаем драйверы
