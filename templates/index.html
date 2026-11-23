@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Autonomous Chess — Тестирование герконов и TMC2209</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body data-mock-mcp="{{ 'true' if mock_mcp else 'false' }}" data-dry-run="{{ 'true' if dry_run else 'false' }}">
+    <div class="app-container">
+        <!-- Верхняя шапка -->
+        <header class="header">
+            <div class="logo-area">
+                <div class="chess-icon">♚</div>
+                <div>
+                    <h1>Autonomous Chess Dashboard</h1>
+                    <p class="subtitle">Тестирование матрицы 64 герконов (MCP23017) и приводов TMC2209</p>
+                </div>
+            </div>
+            <div class="status-badges">
+                <div class="badge" id="badge-matrix">
+                    <span class="status-dot green"></span>
+                    <span class="badge-label">Матрица:</span>
+                    <span class="badge-value" id="matrix-status-text">{{ 'Эмуляция (Mock)' if mock_mcp else 'I2C 0x20' }}</span>
+                </div>
+                <div class="badge" id="badge-drivers">
+                    <span class="status-dot green"></span>
+                    <span class="badge-label">TMC2209:</span>
+                    <span class="badge-value" id="driver-status-text">{{ 'Эмуляция (Dry-run)' if dry_run else 'pigpio UART' }}</span>
+                </div>
+                <div class="badge" id="badge-hz">
+                    <span class="badge-label">Опрос:</span>
+                    <span class="badge-value" id="poll-rate">0.0 Гц</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Основная сетка страницы -->
+        <main class="main-content">
+            <!-- Левая колонка: Шахматная доска -->
+            <section class="board-section card">
+                <div class="card-header">
+                    <div class="card-title">
+                        <h2>Шахматное поле (64 геркона)</h2>
+                        <span class="sensor-count-badge" id="sensor-count-badge">Фигур обнаружено: <strong id="active-count">0</strong></span>
+                    </div>
+                    {% if mock_mcp %}
+                    <div class="mock-banner">
+                        <span>ℹ️ Режим эмуляции: кликайте по клеткам для имитации фигур</span>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <div class="board-wrapper">
+                    <div class="chessboard-container">
+                        <!-- Верхние буквы колонок -->
+                        <div class="files-row top">
+                            <div class="corner-space"></div>
+                            {% for f in files %}
+                            <div class="file-label">{{ f.upper() }}</div>
+                            {% endfor %}
+                            <div class="corner-space"></div>
+                        </div>
+
+                        <!-- Ряды клеток 8..1 -->
+                        <div class="ranks-wrapper">
+                            {% for r in ranks %}
+                            {% set r_idx = loop.index0 %}
+                            <div class="rank-row">
+                                <div class="rank-label left">{{ r }}</div>
+                                <div class="cells-row">
+                                    {% for f in files %}
+                                    {% set is_dark = ((loop.index0 + r_idx) % 2 == 1) %}
+                                    <div class="cell {{ 'dark' if is_dark else 'light' }}" 
+                                         id="sq-{{ f }}{{ r }}" 
+                                         data-square="{{ f }}{{ r }}"
+                                         title="Клетка {{ f }}{{ r }}">
+                                        <span class="coord-label">{{ f }}{{ r }}</span>
+                                        <div class="piece-indicator">
+                                            <span class="piece-dot"></span>
+                                        </div>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                                <div class="rank-label right">{{ r }}</div>
+                            </div>
+                            {% endfor %}
+                        </div>
+
+                        <!-- Нижние буквы колонок -->
+                        <div class="files-row bottom">
+                            <div class="corner-space"></div>
+                            {% for f in files %}
+                            <div class="file-label">{{ f.upper() }}</div>
+                            {% endfor %}
+                            <div class="corner-space"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Панель активных координат -->
+                <div class="active-squares-bar">
+                    <span class="bar-title">Замкнутые герконы:</span>
+                    <div class="active-pills-list" id="active-pills-list">
+                        <span class="no-sensors-msg">Магниты не обнаружены</span>
+                    </div>
+                </div>
+
+                {% if mock_mcp %}
+                <!-- Панель управления эмуляцией -->
+                <div class="mock-actions">
+                    <button class="btn btn-secondary" id="btn-mock-standard">♟ Стандартная расстановка</button>
+                    <button class="btn btn-secondary" id="btn-mock-clear">✕ Очистить доску</button>
+                </div>
+                {% endif %}
+            </section>
+
+            <!-- Правая колонка: Управление движением и приводами -->
+            <section class="controls-section">
+                <!-- Карта координат и состояние -->
+                <div class="card telemetry-card">
+                    <div class="card-title">
+                        <h2>Телеметрия каретки CoreXY</h2>
+                    </div>
+                    <div class="telemetry-grid">
+                        <div class="telemetry-item">
+                            <span class="item-title">Координата X</span>
+                            <span class="item-val" id="pos-x">0.0 <small>мм</small></span>
+                        </div>
+                        <div class="telemetry-item">
+                            <span class="item-title">Координата Y</span>
+                            <span class="item-val" id="pos-y">0.0 <small>мм</small></span>
+                        </div>
+                        <div class="telemetry-item">
+                            <span class="item-title">Электромагнит</span>
+                            <span class="item-val" id="status-magnet">ВЫКЛ</span>
+                        </div>
+                        <div class="telemetry-item">
+                            <span class="item-title">Обмотки моторов</span>
+                            <span class="item-val" id="status-motors">ВЫКЛ</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Джойстик ручного перемещения -->
+                <div class="card jog-card">
+                    <div class="card-title">
+                        <h2>Управление приводами TMC2209</h2>
+                    </div>
+
+                    <!-- Выбор шага -->
+                    <div class="step-selector">
+                        <span class="selector-label">Шаг:</span>
+                        <div class="btn-group">
+                            <button class="btn btn-step" data-step="1">1 мм</button>
+                            <button class="btn btn-step" data-step="5">5 мм</button>
+                            <button class="btn btn-step active" data-step="10">10 мм</button>
+                            <button class="btn btn-step" data-step="34">34 мм (клетка)</button>
+                        </div>
+                    </div>
+
+                    <!-- 8-позиционный D-pad -->
+                    <div class="dpad-container">
+                        <div class="dpad-grid">
+                            <button class="btn btn-jog" data-dx="-1" data-dy="1" title="Вверх-Влево (Q)">↖<span class="kbd">Q</span></button>
+                            <button class="btn btn-jog" data-dx="0" data-dy="1" title="Вверх (W)">↑<span class="kbd">W</span></button>
+                            <button class="btn btn-jog" data-dx="1" data-dy="1" title="Вверх-Вправо (E)">↗<span class="kbd">E</span></button>
+
+                            <button class="btn btn-jog" data-dx="-1" data-dy="0" title="Влево (A)">←<span class="kbd">A</span></button>
+                            <button class="btn btn-jog-center" id="btn-homing" title="StallGuard Homing (H)">🎯<span class="kbd">H</span></button>
+                            <button class="btn btn-jog" data-dx="1" data-dy="0" title="Вправо (D)">→<span class="kbd">D</span></button>
+
+                            <button class="btn btn-jog" data-dx="-1" data-dy="-1" title="Вниз-Влево (Z)">↙<span class="kbd">Z</span></button>
+                            <button class="btn btn-jog" data-dx="0" data-dy="-1" title="Вниз (S)">↓<span class="kbd">S</span></button>
+                            <button class="btn btn-jog" data-dx="1" data-dy="-1" title="Вниз-Вправо (C)">↘<span class="kbd">C</span></button>
+                        </div>
+                    </div>
+
+                    <!-- Кнопки аппаратных действий -->
+                    <div class="actions-grid">
+                        <button class="btn btn-action" id="btn-toggle-magnet">
+                            <span class="icon">🧲</span>
+                            <span class="text">Электромагнит</span>
+                            <span class="shortcut-tag">Space</span>
+                        </button>
+                        <button class="btn btn-action" id="btn-toggle-power">
+                            <span class="icon">⚡</span>
+                            <span class="text">Питание моторов</span>
+                            <span class="shortcut-tag">P</span>
+                        </button>
+                    </div>
+
+                    <!-- Уведомления и лог команд -->
+                    <div class="action-alert" id="action-alert">
+                        <span id="alert-text">Готов к работе</span>
+                    </div>
+                </div>
+
+                <!-- Подсказка клавиатуры -->
+                <div class="card shortcuts-card">
+                    <h3>Горячие клавиши</h3>
+                    <div class="shortcuts-list">
+                        <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>Ортогональные шаги</span></div>
+                        <div><kbd>Q</kbd><kbd>E</kbd><kbd>Z</kbd><kbd>C</kbd><span>Диагональные шаги</span></div>
+                        <div><kbd>Space</kbd><span>Вкл/Выкл магнит</span></div>
+                        <div><kbd>P</kbd><span>Вкл/Выкл питание</span></div>
+                        <div><kbd>H</kbd><span>Калибровка нуля (Homing)</span></div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

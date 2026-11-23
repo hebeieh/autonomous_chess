@@ -3,13 +3,23 @@
 Скрипт проверки и тестирования шаговых двигателей CoreXY и электромагнита
 для проекта автономной шахматной доски.
 
-Использует библиотеку pigpio для генерации импульсов на Raspberry Pi.
-При отсутствии демона pigpiod или флаге --dry-run запускается в режиме эмуляции.
+По умолчанию запускается в интерактивном режиме управления с клавиатуры (WASD + диагонали QEZC).
+Для запуска автоматического теста квадрата используйте флаг --auto.
+
+Поддерживает работу через pigpio на Raspberry Pi и режим эмуляции (--dry-run).
 """
 
 import argparse
+import select
 import sys
 import time
+
+try:
+    import termios
+    import tty
+    TERMIOS_AVAILABLE = True
+except ImportError:
+    TERMIOS_AVAILABLE = False
 
 try:
     import pigpio
@@ -50,9 +60,15 @@ class MockPigpio:
 class CoreXYController:
     """Управление шаговыми моторами по схеме CoreXY и электромагнитом."""
 
-    def __init__(self, dry_run: bool = False):
+    def __init__(self, dry_run: bool = False, soft_limits: bool = True):
         self.dry_run = dry_run
+        self.soft_limits = soft_limits
         self.pi = None
+        self.pos_x = 0.0
+        self.pos_y = 0.0
+        self.magnet_state = False
+        self.motors_enabled = False
+
         self._init_gpio()
         self._setup_pins()
 
@@ -97,6 +113,7 @@ class CoreXYController:
         active_state = config.DRV8825_ENABLE_ACTIVE_STATE  # 0
         self.pi.write(config.MOTOR_LEFT.enable_pin, active_state)
         self.pi.write(config.MOTOR_RIGHT.enable_pin, active_state)
+        self.motors_enabled = True
         time.sleep(0.05)
         print("-> Драйверы DRV8825 ВКЛЮЧЕНЫ (обмотки под током)")
 
@@ -105,10 +122,12 @@ class CoreXYController:
         disabled_state = 1 if config.DRV8825_ENABLE_ACTIVE_STATE == 0 else 0
         self.pi.write(config.MOTOR_LEFT.enable_pin, disabled_state)
         self.pi.write(config.MOTOR_RIGHT.enable_pin, disabled_state)
+        self.motors_enabled = False
         print("-> Драйверы DRV8825 ОТКЛЮЧЕНЫ (обмотки обесточены)")
 
     def set_electromagnet(self, state: bool):
         """Включить (True) или выключить (False) электромагнит через IRLZ44N."""
+        self.magnet_state = state
         level = 1 if state else 0
         self.pi.write(config.ELECTROMAGNET_PIN, level)
         status_str = "ВКЛЮЧЕН" if state else "ВЫКЛЮЧЕН"
@@ -173,6 +192,17 @@ class CoreXYController:
         Delta_A (мотор L) = Delta_X + Delta_Y
         Delta_B (мотор R) = Delta_X - Delta_Y
         """
+        # Проверка программных концевиков (Soft Limits)
+        if self.soft_limits:
+            new_x = self.pos_x + dx_mm
+            new_y = self.pos_y + dy_mm
+            margin = 0.5  # Допустимая погрешность в мм
+            if (new_x < -margin or new_x > config.WORK_AREA_X_MM + margin or
+                new_y < -margin or new_y > config.WORK_AREA_Y_MM + margin):
+                print(f"[SOFT LIMIT] Движение заблокировано! Цель (X={new_x:.1f}, Y={new_y:.1f}) мм "
+                      f"выходит за границы поля [0..{config.WORK_AREA_X_MM:.0f}] x [0..{config.WORK_AREA_Y_MM:.0f}] мм")
+                return False
+
         # Кинематика CoreXY
         da_mm = dx_mm + dy_mm
         db_mm = dx_mm - dy_mm
@@ -185,7 +215,7 @@ class CoreXYController:
 
         max_steps = max(abs_steps_a, abs_steps_b)
         if max_steps == 0:
-            return
+            return True
 
         # Установка направления для мотора A (Left)
         dir_a = (steps_a >= 0)
@@ -201,7 +231,7 @@ class CoreXYController:
 
         # Расчет времени шага по линейному расстоянию перемещения
         dist_cartesian = (dx_mm ** 2 + dy_mm ** 2) ** 0.5
-        total_time = dist_cartesian / speed_mm_s
+        total_time = dist_cartesian / speed_mm_s if speed_mm_s > 0 else 0.001
         step_delay = total_time / max_steps if max_steps > 0 else 0.001
 
         # Минимальный безопасный интервал (не быстрее 10 кГц)
@@ -239,7 +269,10 @@ class CoreXYController:
                 time.sleep(0.01)
 
         t_elapsed = time.time() - t_start
-        print(f"  Выполнено за {t_elapsed:.2f} сек")
+        self.pos_x += dx_mm
+        self.pos_y += dy_mm
+        print(f"  Выполнено за {t_elapsed:.2f} сек. Текущая позиция: X={self.pos_x:.1f} мм, Y={self.pos_y:.1f} мм")
+        return True
 
     def cleanup(self):
         """Очистка ресурсов и обесточивание драйверов."""
@@ -249,9 +282,153 @@ class CoreXYController:
             self.pi.stop()
 
 
+def get_terminal_char() -> str:
+    """Считывает одно нажатие клавиши в терминале без ожидания Enter."""
+    if not TERMIOS_AVAILABLE or not sys.stdin.isatty():
+        # Если stdin не является терминалом (например, пайп или автотест)
+        line = sys.stdin.readline()
+        return line.strip().lower() if line else 'esc'
+
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        ch = sys.stdin.read(1)
+
+        # Обработка Escape-последовательностей (стрелки клавиатуры: ESC [ A/B/C/D)
+        if ch == '\x1b':
+            r, _, _ = select.select([sys.stdin], [], [], 0.05)
+            if r:
+                seq = sys.stdin.read(2)
+                if seq == '[A': return 'w'  # Стрелка вверх
+                elif seq == '[B': return 's'  # Стрелка вниз
+                elif seq == '[C': return 'd'  # Стрелка вправо
+                elif seq == '[D': return 'a'  # Стрелка влево
+            return 'esc'
+
+        # Ctrl+C
+        if ch == '\x03':
+            return 'esc'
+
+        return ch.lower()
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+
+def run_interactive(args):
+    """Интерактивный режим управления кареткой CoreXY с клавиатуры в реальном времени."""
+    step_mm = args.step_size
+
+    print("=" * 70)
+    print("   ИНТЕРАКТИВНОЕ УПРАВЛЕНИЕ COREXY С КЛАВИАТУРЫ В РЕАЛЬНОМ ВРЕМЕНИ")
+    print("=" * 70)
+    print(f"Параметры:")
+    print(f" - Режим:          {'[ЭМУЛЯЦИЯ / DRY-RUN]' if args.dry_run else '[РЕАЛЬНОЕ ЖЕЛЕЗО / PIGPIO]'}")
+    print(f" - Размер шага:    {step_mm:.1f} мм (1 шахматная клетка)")
+    print(f" - Скорость:       {args.speed:.1f} мм/с")
+    print(f" - Границы (Soft): [0..{config.WORK_AREA_X_MM:.0f}] x [0..{config.WORK_AREA_Y_MM:.0f}] мм "
+          f"({'ВКЛ' if not args.no_soft_limits else 'ВЫКЛ'})")
+    print("=" * 70)
+    print("Клавиши управления (срабатывают сразу, БЕЗ нажатия Enter):")
+    print("        [ Q ] Вверх-Влево      [ W / ↑ ] Вверх        [ E ] Вверх-Вправо")
+    print("        [ A / ← ] Влево        [ S / ↓ ] Вниз         [ D / → ] Вправо")
+    print("        [ Z ] Вниз-Влево                              [ C ] Вниз-Вправо")
+    print()
+    print("Дополнительные команды:")
+    print(" [ ПРОБЕЛ / M ] - Включить / выключить электромагнит (IRLZ44N)")
+    print(" [ P ]          - Включить / отключить питание моторов (Enable)")
+    print(" [ H ]          - Вернуться в исходную точку (0, 0)")
+    print(" [ ESC / Ctrl+C]- Завершить работу и выйти")
+    print("=" * 70)
+    print("ВАЖНО: Перед стартом вручную установите каретку в левый верхний угол (0,0)!\n")
+
+    controller = CoreXYController(
+        dry_run=args.dry_run,
+        soft_limits=not args.no_soft_limits
+    )
+
+    try:
+        controller.enable_motors()
+        print(f"\n[ГОТОВ] Текущая позиция: X={controller.pos_x:.1f} мм, Y={controller.pos_y:.1f} мм. Жду нажатия клавиши...")
+
+        while True:
+            key = get_terminal_char()
+
+            if key in ('esc', 'k', '\x1b', 'quit'):
+                print("\n[ВЫХОД] Завершение интерактивного режима...")
+                break
+
+            elif key == 'w':
+                print(f"\n[ВВЕРХ (-Y {step_mm} мм)]")
+                controller.move_cartesian(dx_mm=0.0, dy_mm=-step_mm, speed_mm_s=args.speed)
+
+            elif key == 's':
+                print(f"\n[ВНИЗ (+Y {step_mm} мм)]")
+                controller.move_cartesian(dx_mm=0.0, dy_mm=step_mm, speed_mm_s=args.speed)
+
+            elif key == 'a':
+                print(f"\n[ВЛЕВО (-X {step_mm} мм)]")
+                controller.move_cartesian(dx_mm=-step_mm, dy_mm=0.0, speed_mm_s=args.speed)
+
+            elif key == 'd':
+                print(f"\n[ВПРАВО (+X {step_mm} мм)]")
+                controller.move_cartesian(dx_mm=step_mm, dy_mm=0.0, speed_mm_s=args.speed)
+
+            # Диагональные перемещения (в схеме CoreXY вращается только один мотор!)
+            elif key == 'q':
+                print(f"\n[ДИАГОНАЛЬ ВВЕРХ-ВЛЕВО (-X, -Y {step_mm} мм)]")
+                controller.move_cartesian(dx_mm=-step_mm, dy_mm=-step_mm, speed_mm_s=args.speed)
+
+            elif key == 'e':
+                print(f"\n[ДИАГОНАЛЬ ВВЕРХ-ВПРАВО (+X, -Y {step_mm} мм)]")
+                controller.move_cartesian(dx_mm=step_mm, dy_mm=-step_mm, speed_mm_s=args.speed)
+
+            elif key == 'z':
+                print(f"\n[ДИАГОНАЛЬ ВНИЗ-ВЛЕВО (-X, +Y {step_mm} мм)]")
+                controller.move_cartesian(dx_mm=-step_mm, dy_mm=step_mm, speed_mm_s=args.speed)
+
+            elif key == 'c':
+                print(f"\n[ДИАГОНАЛЬ ВНИЗ-ВПРАВО (+X, +Y {step_mm} мм)]")
+                controller.move_cartesian(dx_mm=step_mm, dy_mm=step_mm, speed_mm_s=args.speed)
+
+            # Управление электромагнитом
+            elif key in (' ', 'm'):
+                new_state = not controller.magnet_state
+                controller.set_electromagnet(new_state)
+
+            # Включение/отключение обмоток моторов
+            elif key == 'p':
+                if controller.motors_enabled:
+                    controller.disable_motors()
+                else:
+                    controller.enable_motors()
+
+            # Возврат в нулевую точку
+            elif key == 'h':
+                print("\n[ВОЗВРАТ В НОЛЬ (0, 0)]")
+                dx = -controller.pos_x
+                dy = -controller.pos_y
+                if abs(dx) > 0.1 or abs(dy) > 0.1:
+                    controller.move_cartesian(dx_mm=dx, dy_mm=dy, speed_mm_s=args.speed)
+                else:
+                    print("Каретка уже находится в нулевой точке.")
+
+            else:
+                # Игнорировать непредусмотренные символы
+                pass
+
+    except KeyboardInterrupt:
+        print("\n\nПрерывание пользователем (Ctrl+C)...")
+    finally:
+        print("\nОчистка ресурсов и отключение питания моторов...")
+        controller.cleanup()
+        print("Готово.")
+
+
 def run_test(args):
+    """Автоматический тест одиночных моторов, контура квадрата и электромагнита."""
     print("=" * 65)
-    print("  ТЕСТИРОВАНИЕ КИНЕМАТИКИ COREXY И ЭЛЕКТРОМАГНИТА ШАХМАТНОЙ ДОСКИ")
+    print("  АВТОМАТИЧЕСКИЙ ТЕСТ КИНЕМАТИКИ COREXY И ЭЛЕКТРОМАГНИТА")
     print("=" * 65)
     print(f"Параметры:")
     print(f" - Мотор L: STEP={config.MOTOR_LEFT.step_pin}, DIR={config.MOTOR_LEFT.dir_pin}, EN={config.MOTOR_LEFT.enable_pin}")
@@ -265,7 +442,7 @@ def run_test(args):
     print("в верхний левый угол (0,0) и имеет запас хода не менее 60 мм по X и Y!")
     print("=" * 65)
 
-    controller = CoreXYController(dry_run=args.dry_run)
+    controller = CoreXYController(dry_run=args.dry_run, soft_limits=not args.no_soft_limits)
 
     try:
         # Шаг 1. Включение моторов
@@ -329,12 +506,23 @@ def run_test(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
-        description="Тестирование моторов CoreXY и электромагнита автономной шахматной доски"
+        description="Тестирование и ручное интерактивное управление моторами CoreXY"
     )
     parser.add_argument(
         '--dry-run',
         action='store_true',
         help='Режим эмуляции без взаимодействия с реальным GPIO'
+    )
+    parser.add_argument(
+        '--auto',
+        action='store_true',
+        help='Запустить автоматический тест квадрата вместо интерактивного режима'
+    )
+    parser.add_argument(
+        '--step-size',
+        type=float,
+        default=config.SQUARE_SIZE_MM,
+        help=f'Дистанция одного шага в интерактивном режиме в мм (по умолчанию {config.SQUARE_SIZE_MM} мм / 1 клетка)'
     )
     parser.add_argument(
         '--speed',
@@ -346,18 +534,27 @@ if __name__ == '__main__':
         '--distance',
         type=float,
         default=50.0,
-        help='Длина стороны тестового квадрата в мм (по умолчанию 50.0)'
+        help='Длина стороны квадрата для автоматического теста в мм (по умолчанию 50.0)'
+    )
+    parser.add_argument(
+        '--no-soft-limits',
+        action='store_true',
+        help='Отключить программные ограничения перемещения по границам стола'
     )
     parser.add_argument(
         '--skip-singles',
         action='store_true',
-        help='Пропустить проверку одиночных моторов'
+        help='(Для режима --auto) Пропустить проверку одиночных моторов'
     )
     parser.add_argument(
         '--skip-magnet',
         action='store_true',
-        help='Пропустить проверку электромагнита'
+        help='(Для режима --auto) Пропустить проверку электромагнита'
     )
 
     args = parser.parse_args()
-    run_test(args)
+
+    if args.auto:
+        run_test(args)
+    else:
+        run_interactive(args)

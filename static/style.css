@@ -1,0 +1,666 @@
+/* ==========================================================================
+   Autonomous Chess Dashboard — Modern Dark Cyberpunk / Industrial Theme
+   ========================================================================== */
+
+:root {
+    --bg-main: #0c1017;
+    --bg-card: #151b26;
+    --bg-card-border: #232c3d;
+    --bg-card-hover: #1c2433;
+    
+    --text-primary: #f0f4fc;
+    --text-secondary: #8b99ad;
+    --text-muted: #536278;
+
+    --cell-light: #2c3647;
+    --cell-dark: #19212d;
+    --cell-active-bg: rgba(0, 245, 160, 0.22);
+    --cell-active-border: #00f5a0;
+    --cell-active-glow: rgba(0, 245, 160, 0.65);
+
+    --accent-cyan: #00e5ff;
+    --accent-emerald: #00f5a0;
+    --accent-orange: #ff9100;
+    --accent-red: #ff3366;
+    --accent-purple: #b388ff;
+
+    --btn-bg: #1f2736;
+    --btn-hover: #2b3548;
+    --btn-active: #37445c;
+    --btn-border: #313d52;
+
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-mono: 'JetBrains Mono', "Courier New", monospace;
+
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    background-color: var(--bg-main);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    line-height: 1.5;
+    min-height: 100vh;
+    padding: 24px 20px;
+}
+
+.app-container {
+    max-width: 1400px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+/* ==========================================================================
+   Header
+   ========================================================================== */
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 24px;
+    background-color: var(--bg-card);
+    border: 1px solid var(--bg-card-border);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.logo-area {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.chess-icon {
+    font-size: 38px;
+    color: var(--accent-emerald);
+    line-height: 1;
+    text-shadow: 0 0 12px var(--cell-active-glow);
+}
+
+.header h1 {
+    font-size: 1.4rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+}
+
+.header .subtitle {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.status-badges {
+    display: flex;
+    gap: 12px;
+}
+
+.badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    background-color: var(--bg-main);
+    border: 1px solid var(--bg-card-border);
+    border-radius: var(--radius-sm);
+    font-size: 0.82rem;
+    font-family: var(--font-mono);
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--text-muted);
+}
+
+.status-dot.green {
+    background-color: var(--accent-emerald);
+    box-shadow: 0 0 8px var(--accent-emerald);
+}
+
+.status-dot.red {
+    background-color: var(--accent-red);
+    box-shadow: 0 0 8px var(--accent-red);
+}
+
+.badge-label {
+    color: var(--text-muted);
+}
+
+.badge-value {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+/* ==========================================================================
+   Main Grid Layout
+   ========================================================================== */
+.main-content {
+    display: grid;
+    grid-template-columns: 1fr 420px;
+    gap: 20px;
+    align-items: start;
+}
+
+@media (max-width: 1080px) {
+    .main-content {
+        grid-template-columns: 1fr;
+    }
+}
+
+.card {
+    background-color: var(--bg-card);
+    border: 1px solid var(--bg-card-border);
+    border-radius: var(--radius-lg);
+    padding: 22px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+}
+
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.card-title h2 {
+    font-size: 1.15rem;
+    font-weight: 600;
+}
+
+.sensor-count-badge {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    background-color: var(--bg-main);
+    border: 1px solid var(--bg-card-border);
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-family: var(--font-mono);
+}
+
+.sensor-count-badge strong {
+    color: var(--accent-emerald);
+    font-size: 0.95rem;
+}
+
+.mock-banner {
+    width: 100%;
+    background-color: rgba(0, 229, 255, 0.08);
+    border: 1px dashed var(--accent-cyan);
+    color: var(--accent-cyan);
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    font-size: 0.82rem;
+    margin-top: 4px;
+}
+
+/* ==========================================================================
+   Chessboard Styling
+   ========================================================================== */
+.board-wrapper {
+    display: flex;
+    justify-content: center;
+    margin: 10px 0 20px 0;
+}
+
+.chessboard-container {
+    display: flex;
+    flex-direction: column;
+    border: 2px solid #2d384c;
+    border-radius: var(--radius-md);
+    background-color: #121722;
+    padding: 6px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    user-select: none;
+}
+
+.files-row {
+    display: flex;
+    height: 24px;
+    align-items: center;
+}
+
+.corner-space {
+    width: 24px;
+    flex-shrink: 0;
+}
+
+.file-label {
+    flex: 1;
+    text-align: center;
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.ranks-wrapper {
+    display: flex;
+    flex-direction: column;
+}
+
+.rank-row {
+    display: flex;
+    align-items: center;
+}
+
+.rank-label {
+    width: 24px;
+    text-align: center;
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.cells-row {
+    display: flex;
+}
+
+.cell {
+    width: 58px;
+    height: 58px;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease-out;
+    cursor: pointer;
+    border: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+@media (max-width: 640px) {
+    .cell {
+        width: 38px;
+        height: 38px;
+    }
+}
+
+.cell.light {
+    background-color: var(--cell-light);
+}
+
+.cell.dark {
+    background-color: var(--cell-dark);
+}
+
+.cell .coord-label {
+    position: absolute;
+    bottom: 2px;
+    right: 3px;
+    font-size: 0.65rem;
+    font-family: var(--font-mono);
+    color: rgba(255, 255, 255, 0.2);
+    pointer-events: none;
+}
+
+.cell .piece-indicator {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    opacity: 0;
+    transform: scale(0.3);
+    transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+    pointer-events: none;
+}
+
+/* Состояние: Геркон замкнут магнитом */
+.cell.active {
+    background-color: var(--cell-active-bg) !important;
+    border: 1.5px solid var(--cell-active-border) !important;
+    box-shadow: inset 0 0 16px var(--cell-active-glow), 0 0 12px var(--cell-active-glow);
+    z-index: 2;
+}
+
+.cell.active .coord-label {
+    color: var(--accent-emerald);
+    font-weight: 700;
+}
+
+.cell.active .piece-indicator {
+    opacity: 1;
+    transform: scale(1);
+    background-color: var(--accent-emerald);
+    box-shadow: 0 0 14px var(--accent-emerald);
+}
+
+/* ==========================================================================
+   Active Sensors Pills & Mock Actions
+   ========================================================================== */
+.active-squares-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    background-color: var(--bg-main);
+    border: 1px solid var(--bg-card-border);
+    border-radius: var(--radius-sm);
+    min-height: 48px;
+    flex-wrap: wrap;
+}
+
+.bar-title {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.active-pills-list {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.no-sensors-msg {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.sq-pill {
+    padding: 2px 8px;
+    background-color: rgba(0, 245, 160, 0.15);
+    border: 1px solid var(--accent-emerald);
+    color: var(--accent-emerald);
+    border-radius: 4px;
+    font-size: 0.78rem;
+    font-family: var(--font-mono);
+    font-weight: 700;
+    animation: fadeIn 0.15s ease-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: scale(0.85); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+.mock-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 14px;
+}
+
+/* ==========================================================================
+   Controls Section
+   ========================================================================== */
+.controls-section {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.telemetry-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.telemetry-item {
+    background-color: var(--bg-main);
+    border: 1px solid var(--bg-card-border);
+    border-radius: var(--radius-sm);
+    padding: 10px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.item-title {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.item-val {
+    font-size: 1.15rem;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    color: var(--accent-cyan);
+}
+
+.item-val.active-state {
+    color: var(--accent-emerald);
+}
+
+.item-val.alert-state {
+    color: var(--accent-red);
+}
+
+.item-val small {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    font-weight: normal;
+}
+
+/* Step Selector */
+.step-selector {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 14px 0 16px 0;
+}
+
+.selector-label {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.btn-group {
+    display: flex;
+    gap: 6px;
+    flex: 1;
+}
+
+.btn-step {
+    flex: 1;
+    padding: 6px 4px;
+    background-color: var(--btn-bg);
+    border: 1px solid var(--btn-border);
+    color: var(--text-secondary);
+    border-radius: var(--radius-sm);
+    font-size: 0.78rem;
+    font-family: var(--font-mono);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.btn-step:hover {
+    background-color: var(--btn-hover);
+    color: var(--text-primary);
+}
+
+.btn-step.active {
+    background-color: rgba(0, 229, 255, 0.15);
+    border-color: var(--accent-cyan);
+    color: var(--accent-cyan);
+    font-weight: 700;
+}
+
+/* D-PAD Navigation */
+.dpad-container {
+    display: flex;
+    justify-content: center;
+    margin: 10px 0 18px 0;
+}
+
+.dpad-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 72px);
+    grid-template-rows: repeat(3, 62px);
+    gap: 8px;
+}
+
+.btn-jog, .btn-jog-center {
+    background-color: var(--btn-bg);
+    border: 1px solid var(--btn-border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-size: 1.25rem;
+    font-weight: bold;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.1s ease;
+    user-select: none;
+    position: relative;
+}
+
+.btn-jog .kbd, .btn-jog-center .kbd {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    margin-top: -2px;
+}
+
+.btn-jog:hover, .btn-jog-center:hover {
+    background-color: var(--btn-hover);
+    border-color: var(--accent-cyan);
+    color: var(--accent-cyan);
+    transform: translateY(-1px);
+}
+
+.btn-jog:active, .btn-jog-center:active {
+    background-color: var(--btn-active);
+    transform: translateY(1px);
+}
+
+.btn-jog-center {
+    background-color: #212c3d;
+    border-color: #3b4d6a;
+}
+
+.btn-jog-center:hover {
+    border-color: var(--accent-emerald);
+    color: var(--accent-emerald);
+}
+
+/* Actions Grid */
+.actions-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 14px;
+}
+
+.btn-action {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    background-color: var(--btn-bg);
+    border: 1px solid var(--btn-border);
+    color: var(--text-primary);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 0.82rem;
+    font-weight: 600;
+    transition: all 0.15s ease;
+}
+
+.btn-action:hover {
+    background-color: var(--btn-hover);
+}
+
+.btn-action.active-magnet {
+    background-color: rgba(255, 51, 102, 0.2);
+    border-color: var(--accent-red);
+    color: var(--accent-red);
+    box-shadow: 0 0 10px rgba(255, 51, 102, 0.3);
+}
+
+.btn-action.active-power {
+    background-color: rgba(0, 245, 160, 0.15);
+    border-color: var(--accent-emerald);
+    color: var(--accent-emerald);
+    box-shadow: 0 0 10px rgba(0, 245, 160, 0.25);
+}
+
+.shortcut-tag {
+    font-size: 0.7rem;
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    background-color: rgba(0, 0, 0, 0.3);
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.action-alert {
+    padding: 8px 12px;
+    background-color: var(--bg-main);
+    border: 1px solid var(--bg-card-border);
+    border-radius: var(--radius-sm);
+    font-size: 0.8rem;
+    font-family: var(--font-mono);
+    color: var(--text-secondary);
+    text-align: center;
+}
+
+/* Shortcuts legend card */
+.shortcuts-card h3 {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    margin-bottom: 10px;
+}
+
+.shortcuts-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: 0.82rem;
+}
+
+.shortcuts-list div {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-secondary);
+}
+
+kbd {
+    background-color: var(--bg-main);
+    border: 1px solid var(--bg-card-border);
+    color: var(--accent-cyan);
+    font-family: var(--font-mono);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: bold;
+}
+
+/* General Buttons */
+.btn {
+    font-family: var(--font-sans);
+}
+
+.btn-secondary {
+    flex: 1;
+    padding: 8px 12px;
+    background-color: var(--btn-bg);
+    border: 1px solid var(--btn-border);
+    color: var(--text-primary);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 0.82rem;
+    transition: all 0.15s ease;
+}
+
+.btn-secondary:hover {
+    background-color: var(--btn-hover);
+    border-color: var(--accent-cyan);
+}
