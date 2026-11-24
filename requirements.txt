@@ -1,0 +1,6 @@
+# Autonomous Chess Dependencies
+flask>=3.0.0
+smbus2>=0.4.0
+chess>=1.10.0
+pigpio>=1.78
+pytest>=7.0.0
